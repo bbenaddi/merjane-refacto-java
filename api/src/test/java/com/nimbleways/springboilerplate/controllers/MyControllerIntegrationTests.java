@@ -14,9 +14,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.junit.Assert.assertEquals;
 
-// import com.fasterxml.jackson.databind.ObjectMapper;
-
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
@@ -44,17 +43,35 @@ public class MyControllerIntegrationTests {
         private ProductRepository productRepository;
 
         @Test
-        public void processOrderShouldReturn() throws Exception {
-                List<Product> allProducts = createProducts();
-                Set<Product> orderItems = new HashSet<Product>(allProducts);
+        public void processOrder_Normal_ShouldSucceed() throws Exception {
+                // Given
+                List<Product> products = createProducts();
+                Set<Product> orderItems = new HashSet<>(products);
                 Order order = createOrder(orderItems);
-                productRepository.saveAll(allProducts);
+
+                productRepository.saveAll(products);
                 order = orderRepository.save(order);
+
+                // When & Then
                 mockMvc.perform(post("/orders/{orderId}/processOrder", order.getId())
                                 .contentType("application/json"))
-                                .andExpect(status().isOk());
-                Order resultOrder = orderRepository.findById(order.getId()).get();
-                assertEquals(resultOrder.getId(), order.getId());
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(order.getId()));
+
+                // Verify product states
+                for (Product product : products) {
+                        Product updatedProduct = productRepository.findById(product.getId()).orElseThrow();
+                        if (product.getType().equals("NORMAL") && product.getAvailable() > 0) {
+                                assertEquals((int) product.getAvailable() - 1, (int) updatedProduct.getAvailable());
+                        }
+                }
+        }
+
+        @Test
+        public void processOrder_NonExistentOrder_ShouldReturn404() throws Exception {
+                mockMvc.perform(post("/orders/{orderId}/processOrder", 999L)
+                                .contentType("application/json"))
+                                .andExpect(status().isNotFound());
         }
 
         private static Order createOrder(Set<Product> products) {
